@@ -6,3 +6,4 @@ url: https://naya.tech
 requires: [pro_micro]
 features:
   - keys
+  - studio

@@ -1,39 +1,56 @@
 /*
- * MAPPING TEST keymap.
- * Every matrix position types a different character, so we can learn which
- * physical key is which. HOLD ANY KEY FOR 3 SECONDS to enter the bootloader
- * (the NAYA Dongle drive reappears) - this is the recovery path.
+ * Naya Create right half - standalone ZMK keymap.
+ * You can change any of this live in ZMK Studio (https://zmk.studio).
  *
- *  row 0:  a b c d e f g h
- *  row 1:  i j k l m n o p
- *  row 2:  q r s t u v w x
- *  row 3:  y z 1 2 3 4 5 6
- *  row 4:  7 8 9 0 - = [ ]
+ * Physical layout:
+ *   Enter 6 7 8 9 0 - =
+ *         Y U I O P [ ]
+ *         H J K L ; ' \
+ *         N M , . / Shift (7th key)
+ *   S1 S2 S3 Space Alt Option Ctrl S4
+ *
+ * S1 = layer 1 (F-keys/numpad), S4 = layer 2 (system), S2 = Backspace, S3 = Delete.
+ * Bootloader: hold S4 + tap Enter.   Studio unlock: hold S4 + tap the 7th key of the "N M" row.
  */
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/keys.h>
+#include <dt-bindings/zmk/bt.h>
+#include <dt-bindings/zmk/outputs.h>
 
 / {
-    behaviors {
-        hb: hold_bootloader {
-            compatible = "zmk,behavior-hold-tap";
-            #binding-cells = <2>;
-            tapping-term-ms = <3000>;
-            flavor = "tap-preferred";
-            bindings = <&bootloader>, <&kp>;
-        };
-    };
-
     keymap {
         compatible = "zmk,keymap";
 
-        test_layer {
+        base {
+            display-name = "Base";
             bindings = <
-                &hb 0 A     &hb 0 B     &hb 0 C     &hb 0 D     &hb 0 E     &hb 0 F     &hb 0 G     &hb 0 H
-                &hb 0 I     &hb 0 J     &hb 0 K     &hb 0 L     &hb 0 M     &hb 0 N     &hb 0 O     &hb 0 P
-                &hb 0 Q     &hb 0 R     &hb 0 S     &hb 0 T     &hb 0 U     &hb 0 V     &hb 0 W     &hb 0 X
-                &hb 0 Y     &hb 0 Z     &hb 0 N1    &hb 0 N2    &hb 0 N3    &hb 0 N4    &hb 0 N5    &hb 0 N6
-                &hb 0 N7    &hb 0 N8    &hb 0 N9    &hb 0 N0    &hb 0 MINUS &hb 0 EQUAL &hb 0 LBKT  &hb 0 RBKT
+                &kp RET  &kp N6 &kp N7 &kp N8    &kp N9  &kp N0   &kp MINUS &kp EQUAL
+                         &kp Y  &kp U  &kp I     &kp O   &kp P    &kp LBKT  &kp RBKT
+                &kp DEL  &kp H  &kp J  &kp K     &kp L   &kp SEMI &kp SQT   &kp BSLH
+                &kp BSPC &kp N  &kp M  &kp COMMA &kp DOT &kp FSLH &kp RSHFT &kp RSHFT
+                &mo 1                  &kp SPACE &kp RALT &kp RGUI &kp RCTRL &mo 2
+            >;
+        };
+
+        numpad {
+            display-name = "Numpad";
+            bindings = <
+                &trans  &kp F6     &kp F7          &kp F8    &kp F9     &kp F10       &kp F11  &kp F12
+                        &kp KP_MULTIPLY &kp KP_N7  &kp KP_N8 &kp KP_N9  &kp KP_PLUS   &kp LPAR &kp RPAR
+                &trans  &kp KP_DOT &kp KP_N4       &kp KP_N5 &kp KP_N6  &kp KP_MINUS  &trans   &kp TAB
+                &trans  &kp COMMA  &kp KP_N1       &kp KP_N2 &kp KP_N3  &kp KP_DIVIDE &trans   &trans
+                &trans                             &kp KP_N0 &kp KP_DOT &trans        &trans   &trans
+            >;
+        };
+
+        system {
+            display-name = "System";
+            bindings = <
+                &bootloader &bt BT_SEL 0 &bt BT_SEL 1 &bt BT_SEL 2 &bt BT_SEL 3 &bt BT_CLR &out OUT_USB &out OUT_BLE
+                            &kp C_PREV   &kp C_NEXT   &kp C_VOL_DN &kp C_VOL_UP &kp C_PP   &kp C_MUTE   &none
+                &trans      &none        &none        &none        &none        &none      &none        &none
+                &trans      &none        &none        &none        &none        &none      &none        &studio_unlock
+                &trans                                &trans       &trans       &trans     &trans       &trans
             >;
         };
     };

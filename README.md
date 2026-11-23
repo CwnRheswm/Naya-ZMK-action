@@ -3,14 +3,14 @@
 Standalone ZMK firmware for a Naya Create **right half** whose factory firmware
 cannot link to the left half. Built on ZMK v0.3 with the `nice_nano_v2` board
 (same nRF52840 + Adafruit UF2 bootloader layout) plus a `naya_right` shield
-whose matrix was recovered from the original firmware.
+whose matrix was recovered from the original firmware and mapped by key test.
 
-Build: push this repo to GitHub -> Actions -> download the `firmware` artifact
--> `naya_right-nice_nano_v2-zmk.uf2`.
+Layers: 0 = Naya Default right half, 1 = F-keys/numpad (Naya layer 1),
+2 = Bluetooth / USB-BLE output / media / bootloader.
 
-Flash: put the right half in bootloader mode (NAYA Dongle drive appears) and
-copy the .uf2 onto it.
+Bootloader: hold MO2 (bottom-right key) and tap the top-left key; the
+NAYA Dongle drive appears. Copy CURRENT.UF2 onto it to restore the factory firmware.
 
-Recovery: in this test build, hold any key for 3 s to get back to the
-bootloader; copy your CURRENT.UF2 backup onto the drive to restore the
-original firmware.
+## Remapping
+ZMK Studio is enabled. Open https://zmk.studio in Chrome or Edge with the right
+half plugged in by USB, connect, and unlock with S4 + the 7th key of the N/M row.
