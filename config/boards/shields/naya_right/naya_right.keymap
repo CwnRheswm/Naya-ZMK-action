@@ -10,12 +10,15 @@
  *   S1 S2 S3 Space Alt Option Ctrl S4
  *
  * S1 = layer 1 (F-keys/numpad), S4 = layer 2 (system), S2 = Backspace, S3 = Delete.
+ * LEDs (hold S4): H toggle, J next effect, K/L hue +/-, ; and ' saturation +/-,
+ *                 N/M brightness +/-, , and . speed +/-, / previous effect.
  * Bootloader: hold S4 + tap Enter.   Studio unlock: hold S4 + tap the 7th key of the "N M" row.
  */
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/keys.h>
 #include <dt-bindings/zmk/bt.h>
 #include <dt-bindings/zmk/outputs.h>
+#include <dt-bindings/zmk/rgb.h>
 
 / {
     keymap {
@@ -48,8 +51,8 @@
             bindings = <
                 &bootloader &bt BT_SEL 0 &bt BT_SEL 1 &bt BT_SEL 2 &bt BT_SEL 3 &bt BT_CLR &out OUT_USB &out OUT_BLE
                             &kp C_PREV   &kp C_NEXT   &kp C_VOL_DN &kp C_VOL_UP &kp C_PP   &kp C_MUTE   &none
-                &trans      &none        &none        &none        &none        &none      &none        &none
-                &trans      &none        &none        &none        &none        &none      &none        &studio_unlock
+                &trans      &rgb_ug RGB_TOG &rgb_ug RGB_EFF &rgb_ug RGB_HUI &rgb_ug RGB_HUD &rgb_ug RGB_SAI &rgb_ug RGB_SAD &none
+                &trans      &rgb_ug RGB_BRI &rgb_ug RGB_BRD &rgb_ug RGB_SPI &rgb_ug RGB_SPD &rgb_ug RGB_EFR &none &studio_unlock
                 &trans                                &trans       &trans       &trans     &trans       &trans
             >;
         };

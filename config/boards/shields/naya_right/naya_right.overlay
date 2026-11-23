@@ -7,11 +7,22 @@
  */
 #include <dt-bindings/zmk/matrix_transform.h>
 #include <physical_layouts.dtsi>
+#include <dt-bindings/led/led.h>
 
 / {
     chosen {
         zmk,kscan = &kscan0;
         zmk,physical-layout = &physical_layout0;
+        zmk,underglow = &led_strip;
+        zmk,battery = &naya_vbatt;
+    };
+
+    /* Battery: AIN3 (P0.05) through a 1.4133:1 divider (from original firmware). */
+    naya_vbatt: naya_vbatt {
+        compatible = "zmk,battery-voltage-divider";
+        io-channels = <&adc 3>;
+        output-ohms = <750000>;
+        full-ohms = <1060000>;
     };
 
     kscan0: kscan {
@@ -106,6 +117,46 @@
             , <&key_physical_attrs 100 100 600 400 0 0 0>
             , <&key_physical_attrs 100 100 700 400 0 0 0>
             ;
+    };
+};
+
+/* LED power switch is P1.04 on the Naya board (nice!nano uses P0.13). */
+&{/EXT_POWER} {
+    control-gpios = <&gpio1 4 GPIO_ACTIVE_HIGH>;
+};
+
+/* nice!nano's own battery source (VDDH) doesn't apply here. */
+&vbatt { status = "disabled"; };
+&adc { status = "okay"; };
+
+/* 44 x WS2812 (GRB) on P0.04, driven by SPI at 4 MHz - same as the original firmware. */
+&pinctrl {
+    spi3_default: spi3_default {
+        group1 { psels = <NRF_PSEL(SPIM_MOSI, 0, 4)>; };
+    };
+    spi3_sleep: spi3_sleep {
+        group1 {
+            psels = <NRF_PSEL(SPIM_MOSI, 0, 4)>;
+            low-power-enable;
+        };
+    };
+};
+
+&spi3 {
+    compatible = "nordic,nrf-spim";
+    status = "okay";
+    pinctrl-0 = <&spi3_default>;
+    pinctrl-1 = <&spi3_sleep>;
+    pinctrl-names = "default", "sleep";
+
+    led_strip: ws2812@0 {
+        compatible = "worldsemi,ws2812-spi";
+        reg = <0>;
+        spi-max-frequency = <4000000>;
+        chain-length = <44>;
+        spi-one-frame = <0x70>;
+        spi-zero-frame = <0x40>;
+        color-mapping = <LED_COLOR_ID_GREEN LED_COLOR_ID_RED LED_COLOR_ID_BLUE>;
     };
 };
 
