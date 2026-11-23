@@ -1,0 +1,8 @@
+file_format: "1"
+id: naya_right
+name: Naya Create Right (standalone)
+type: shield
+url: https://naya.tech
+requires: [pro_micro]
+features:
+  - keys

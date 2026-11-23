@@ -1,0 +1,40 @@
+/*
+ * MAPPING TEST keymap.
+ * Every matrix position types a different character, so we can learn which
+ * physical key is which. HOLD ANY KEY FOR 3 SECONDS to enter the bootloader
+ * (the NAYA Dongle drive reappears) - this is the recovery path.
+ *
+ *  row 0:  a b c d e f g h
+ *  row 1:  i j k l m n o p
+ *  row 2:  q r s t u v w x
+ *  row 3:  y z 1 2 3 4 5 6
+ *  row 4:  7 8 9 0 - = [ ]
+ */
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+
+/ {
+    behaviors {
+        hb: hold_bootloader {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            tapping-term-ms = <3000>;
+            flavor = "tap-preferred";
+            bindings = <&bootloader>, <&kp>;
+        };
+    };
+
+    keymap {
+        compatible = "zmk,keymap";
+
+        test_layer {
+            bindings = <
+                &hb 0 A     &hb 0 B     &hb 0 C     &hb 0 D     &hb 0 E     &hb 0 F     &hb 0 G     &hb 0 H
+                &hb 0 I     &hb 0 J     &hb 0 K     &hb 0 L     &hb 0 M     &hb 0 N     &hb 0 O     &hb 0 P
+                &hb 0 Q     &hb 0 R     &hb 0 S     &hb 0 T     &hb 0 U     &hb 0 V     &hb 0 W     &hb 0 X
+                &hb 0 Y     &hb 0 Z     &hb 0 N1    &hb 0 N2    &hb 0 N3    &hb 0 N4    &hb 0 N5    &hb 0 N6
+                &hb 0 N7    &hb 0 N8    &hb 0 N9    &hb 0 N0    &hb 0 MINUS &hb 0 EQUAL &hb 0 LBKT  &hb 0 RBKT
+            >;
+        };
+    };
+};
