@@ -12,6 +12,8 @@
  * S1 = layer 1 (F-keys/numpad), S4 = layer 2 (system), S2 = Backspace, S3 = Delete.
  * LEDs (hold S4): H toggle, J next effect, K/L hue +/-, ; and ' saturation +/-,
  *                 N/M brightness +/-, , and . speed +/-, / previous effect.
+ * Arrows layer: on while Scroll Lock is on (set a left-half key to Scroll Lock to switch it).
+ *   I = Up, J = Left, K = Down, L = Right, U = Home, O = End, Y = Page Up, H = Page Down.
  * Bootloader: hold S4 + tap Enter.   Studio unlock: hold S4 + tap the 7th key of the "N M" row.
  */
 #include <behaviors.dtsi>
@@ -54,6 +56,17 @@
                 &trans      &rgb_ug RGB_TOG &rgb_ug RGB_EFF &rgb_ug RGB_HUI &rgb_ug RGB_HUD &rgb_ug RGB_SAI &rgb_ug RGB_SAD &none
                 &trans      &rgb_ug RGB_BRI &rgb_ug RGB_BRD &rgb_ug RGB_SPI &rgb_ug RGB_SPD &rgb_ug RGB_EFR &none &studio_unlock
                 &trans                                &trans       &trans       &trans     &trans       &trans
+            >;
+        };
+
+        arrows {
+            display-name = "Arrows";
+            bindings = <
+                &trans  &trans     &trans     &trans    &trans     &trans  &trans  &trans
+                        &kp PG_UP  &kp HOME   &kp UP    &kp END    &trans  &trans  &trans
+                &trans  &kp PG_DN  &kp LEFT   &kp DOWN  &kp RIGHT  &trans  &trans  &trans
+                &trans  &trans     &trans     &trans    &trans     &trans  &trans  &trans
+                &trans                        &trans    &trans     &trans  &trans  &trans
             >;
         };
     };
