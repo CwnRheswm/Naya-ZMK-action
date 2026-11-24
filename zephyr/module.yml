@@ -1,0 +1,4 @@
+name: naya-ctrl
+build:
+  cmake: .
+  kconfig: Kconfig

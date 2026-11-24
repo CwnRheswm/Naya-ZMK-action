@@ -160,6 +160,13 @@
     };
 };
 
+/* Second USB serial port for the Naya Control app (Studio uses its own). */
+&zephyr_udc0 {
+    naya_cdc: naya_cdc {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};
+
 /* The nice!nano board routes these peripherals onto pins the Naya matrix uses
  * (e.g. UART on P0.06/P0.08). Turn them off so nothing fights the matrix. */
 &uart0 { status = "disabled"; };

@@ -1,0 +1,6 @@
+config NAYA_CTRL
+    bool "Naya control commands on a USB serial port (for the Naya Control app)"
+    select SERIAL
+    select UART_INTERRUPT_DRIVEN
+    select UART_LINE_CTRL
+    select USB_CDC_ACM
