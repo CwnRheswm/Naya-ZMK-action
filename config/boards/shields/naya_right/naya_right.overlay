@@ -13,7 +13,7 @@
     chosen {
         zmk,kscan = &kscan0;
         zmk,physical-layout = &physical_layout0;
-        zmk,underglow = &led_strip;
+        zmk,underglow = &led_ovl;   /* pass-through that adds the Bluetooth slot light (src/led_overlay.c) */
         zmk,battery = &naya_vbatt;
     };
 
@@ -21,6 +21,13 @@
     naya_input: naya_input {
         compatible = "naya,module-input";
         status = "okay";
+    };
+
+    led_ovl: led_overlay {
+        compatible = "naya,led-overlay";
+        status = "okay";
+        led-strip = <&led_strip>;
+        chain-length = <44>;
     };
 
     naya_input_listener {

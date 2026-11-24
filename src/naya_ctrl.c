@@ -41,6 +41,8 @@
  *   km set <layer> <pos> <behavior> <param1 hex> <param2 hex>
  *   km save | km discard    -> keep or drop unsaved keymap changes
  *   bt stat | bt sel <n> | bt clr
+ *   ovl stat                -> "ovl on=<0|1> level=<n> test=<led> leds=<s0>,<s1>,<s2>,<s3>,<s4>" (Bluetooth slot light)
+ *   ovl on|off / ovl level <0-255> / ovl led <slot 0-4> <led index, -1 = none> / ovl test <led, -1 = stop>
  *   led timeout [seconds]   -> LEDs turn off after this long without a key press or module input,
  *                              and back on at the next one. 0 = never. Saved on the keyboard.
  */
@@ -68,6 +70,7 @@
 #include <zmk/ble.h>
 #include <zephyr/input/input.h>
 #include <dt-bindings/zmk/keys.h>
+#include "led_overlay.h"
 
 #define ADAFRUIT_BOOTLOADER_MAGIC 0x57
 
@@ -321,6 +324,30 @@ static void handle(char *c) {
             reply_rc(zmk_ble_prof_select((uint8_t)atoi(arg + 4)));
         } else if (!strcmp(arg, "clr")) {
             zmk_ble_clear_bonds();
+            reply("ok");
+        } else {
+            reply("err unknown");
+        }
+    } else if (!strcmp(c, "ovl") && arg) {
+        int a = 0, b = 0;
+        if (!strcmp(arg, "stat")) {
+            snprintf(out, sizeof(out), "ovl on=%d level=%u test=%d leds=%d,%d,%d,%d,%d", naya_ovl_enabled(),
+                     naya_ovl_level(), naya_ovl_test_led(), naya_ovl_slot_led(0), naya_ovl_slot_led(1),
+                     naya_ovl_slot_led(2), naya_ovl_slot_led(3), naya_ovl_slot_led(4));
+            reply(out);
+        } else if (!strcmp(arg, "on") || !strcmp(arg, "off")) {
+            naya_ovl_set_enabled(!strcmp(arg, "on"));
+            reply("ok");
+        } else if (sscanf(arg, "level %d", &a) == 1 && a >= 0 && a <= 255) {
+            naya_ovl_set_level((uint8_t)a);
+            reply("ok");
+        } else if (sscanf(arg, "led %d %d", &a, &b) == 2) {
+            reply_rc(naya_ovl_set_slot_led(a, b));
+        } else if (sscanf(arg, "test %d", &a) == 1) {
+            naya_ovl_test(a);
+            if (a >= 0) {
+                zmk_rgb_underglow_on();   /* the finder needs the LEDs running */
+            }
             reply("ok");
         } else {
             reply("err unknown");

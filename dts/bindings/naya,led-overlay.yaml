@@ -1,0 +1,14 @@
+description: |
+  Pass-through LED strip used as zmk,underglow. Every frame from the underglow is copied,
+  the Bluetooth-slot key is painted white (see led_overlay.c), and the result goes to led-strip.
+compatible: "naya,led-overlay"
+include: base.yaml
+properties:
+  led-strip:
+    type: phandle
+    required: true
+    description: The real LED strip.
+  chain-length:
+    type: int
+    required: true
+    description: Number of LEDs (same as the real strip; ZMK's underglow reads it from here).

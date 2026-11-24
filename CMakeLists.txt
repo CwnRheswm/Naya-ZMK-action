@@ -2,4 +2,5 @@
 if(CONFIG_NAYA_CTRL)
   target_sources(app PRIVATE src/naya_ctrl.c)
   target_sources(app PRIVATE src/arrow_lock.c)
+  target_sources(app PRIVATE src/led_overlay.c)
 endif()
