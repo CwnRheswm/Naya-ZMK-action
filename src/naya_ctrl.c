@@ -31,6 +31,16 @@
  *     hold button + turn        -> volume up / down
  *     press + release, no turn  -> mute
  *
+ *   act list                -> "act tap=T:P scroll_a=T:P ..." (T: 0 none, 1 key, 2 mouse button, 3 wheel, 4 h-wheel)
+ *   act set <event> <T> <P> -> set and save one module action (P: ZMK keycode / button 0-2 / wheel steps)
+ *   mod type                -> "mod type touch|dial|none <seconds since last seen>"
+ *   mod detect              -> power-cycle the module so it announces itself
+ *   km info                 -> "km layers <n> keys <n>"
+ *   km name <layer>         -> "km name <layer> <name>"
+ *   km get <layer> <pos>    -> "km <layer> <pos> <behavior> <param1 hex> <param2 hex>"
+ *   km set <layer> <pos> <behavior> <param1 hex> <param2 hex>
+ *   km save | km discard    -> keep or drop unsaved keymap changes
+ *   bt stat | bt sel <n> | bt clr
  *   led timeout [seconds]   -> LEDs turn off after this long without a key press or module input,
  *                              and back on at the next one. 0 = never. Saved on the keyboard.
  */
@@ -51,6 +61,9 @@
 #include <zmk/event_manager.h>
 #include <zmk/events/position_state_changed.h>
 #include <zephyr/settings/settings.h>
+#include <zmk/keymap.h>
+#include <zmk/behavior.h>
+#include <zmk/ble.h>
 #include <zephyr/input/input.h>
 #include <dt-bindings/zmk/keys.h>
 
@@ -74,13 +87,43 @@ DEVICE_DT_DEFINE(NAYA_INPUT_NODE, naya_input_init, NULL, NULL, NULL, POST_KERNEL
 static const struct device *const naya_in = DEVICE_DT_GET(NAYA_INPUT_NODE);
 
 static int touch_speed_pct = 50;
-static int touch_scroll_steps = 1;
 static bool flip_x, flip_y;
 static int acc_x, acc_y; /* sub-pixel remainders for speed scaling */
 static uint32_t mod_frames;
-static int dial_dir = 1;          /* 1: clockwise scrolls down; -1 reverses */
 static bool dial_btn_down;
 static bool dial_turned_while_down;
+
+/* ---- Module action table (persisted as "naya/acts") ---- */
+enum { A_NONE = 0, A_KEY = 1, A_MBTN = 2, A_WHEEL = 3, A_HWHEEL = 4 };
+enum {
+    EV_TAP, EV_SCROLL_A, EV_SCROLL_B, EV_PINCH,                          /* touch module */
+    EV_TURN_CW, EV_TURN_CCW, EV_HOLD_CW, EV_HOLD_CCW, EV_PRESS, EV_BTN_1D, EV_BTN_1B, /* dial */
+    EV_COUNT
+};
+static const char *const ev_names[EV_COUNT] = {"tap",     "scroll_a", "scroll_b", "pinch",
+                                               "turn_cw", "turn_ccw", "hold_cw",  "hold_ccw",
+                                               "press",   "btn_1d",   "btn_1b"};
+struct naya_act {
+    int32_t param;
+    uint8_t type;
+    uint8_t pad[3];
+};
+static struct naya_act acts[EV_COUNT] = {
+    [EV_TAP] = {.type = A_MBTN, .param = 0},
+    [EV_SCROLL_A] = {.type = A_WHEEL, .param = 1},
+    [EV_SCROLL_B] = {.type = A_WHEEL, .param = -1},
+    [EV_PINCH] = {.type = A_NONE},
+    [EV_TURN_CW] = {.type = A_WHEEL, .param = -1},
+    [EV_TURN_CCW] = {.type = A_WHEEL, .param = 1},
+    [EV_HOLD_CW] = {.type = A_KEY, .param = C_VOLUME_UP},
+    [EV_HOLD_CCW] = {.type = A_KEY, .param = C_VOLUME_DOWN},
+    [EV_PRESS] = {.type = A_KEY, .param = C_MUTE},
+    [EV_BTN_1D] = {.type = A_NONE},
+    [EV_BTN_1B] = {.type = A_NONE},
+};
+
+static uint8_t last_src;       /* 0x10 touch module, 0x40 dial, 0 unknown */
+static int64_t last_seen_ms;
 
 /* ---- LED idle timeout (persisted in settings as "naya/led_to", seconds) ---- */
 static uint32_t led_timeout_s = 300;
@@ -112,6 +155,8 @@ static void activity(void) {
 static int naya_settings_set(const char *key, size_t len, settings_read_cb read_cb, void *cb_arg) {
     if (!strcmp(key, "led_to") && len == sizeof(led_timeout_s)) {
         read_cb(cb_arg, &led_timeout_s, sizeof(led_timeout_s));
+    } else if (!strcmp(key, "acts") && len == sizeof(acts)) {
+        read_cb(cb_arg, acts, sizeof(acts));
     }
     return 0;
 }
@@ -174,6 +219,107 @@ static void handle(char *c) {
         reply("ok");
         k_msleep(50);
         sys_reboot(ADAFRUIT_BOOTLOADER_MAGIC);
+    } else if (!strcmp(c, "act") && arg) {
+        if (!strcmp(arg, "list")) {
+            static char big[EV_COUNT * 24 + 8];
+            char *o = big;
+            o += sprintf(o, "act");
+            for (int i = 0; i < EV_COUNT; i++) {
+                o += sprintf(o, " %s=%u:%ld", ev_names[i], acts[i].type, (long)acts[i].param);
+            }
+            reply(big);
+        } else if (!strncmp(arg, "set ", 4)) {
+            char name[16];
+            unsigned t;
+            long prm;
+            if (sscanf(arg + 4, "%15s %u %li", name, &t, &prm) != 3 || t > A_HWHEEL) {
+                reply("err args");
+                return;
+            }
+            for (int i = 0; i < EV_COUNT; i++) {
+                if (!strcmp(name, ev_names[i])) {
+                    acts[i].type = (uint8_t)t;
+                    acts[i].param = (int32_t)prm;
+                    settings_save_one("naya/acts", acts, sizeof(acts));
+                    reply("ok");
+                    return;
+                }
+            }
+            reply("err event");
+        } else {
+            reply("err unknown");
+        }
+    } else if (!strcmp(c, "km") && arg) {
+        char *sub = arg;
+        char *rest = strchr(sub, ' ');
+        if (rest) {
+            *rest++ = '\0';
+        }
+        if (!strcmp(sub, "info")) {
+            snprintf(out, sizeof(out), "km layers %d keys %d", ZMK_KEYMAP_LAYERS_LEN, ZMK_KEYMAP_LEN);
+            reply(out);
+        } else if (!strcmp(sub, "name") && rest) {
+            int l = atoi(rest);
+            const char *nm = zmk_keymap_layer_name(zmk_keymap_layer_index_to_id(l));
+            snprintf(out, sizeof(out), "km name %d %s", l, nm ? nm : "");
+            reply(out);
+        } else if (!strcmp(sub, "get") && rest) {
+            int l = -1, pos = -1;
+            if (sscanf(rest, "%d %d", &l, &pos) != 2 || l < 0 || l >= ZMK_KEYMAP_LAYERS_LEN || pos < 0 ||
+                pos >= ZMK_KEYMAP_LEN) {
+                reply("err range");
+                return;
+            }
+            const struct zmk_behavior_binding *b =
+                zmk_keymap_get_layer_binding_at(zmk_keymap_layer_index_to_id(l), pos);
+            char line[96];
+            snprintf(line, sizeof(line), "km %d %d %s %lx %lx", l, pos,
+                     (b && b->behavior_dev) ? b->behavior_dev : "none", b ? (unsigned long)b->param1 : 0,
+                     b ? (unsigned long)b->param2 : 0);
+            reply(line);
+        } else if (!strcmp(sub, "set") && rest) {
+            int l = -1, pos = -1;
+            char bname[32];
+            unsigned long p1 = 0, p2 = 0;
+            if (sscanf(rest, "%d %d %31s %lx %lx", &l, &pos, bname, &p1, &p2) < 3 || l < 0 ||
+                l >= ZMK_KEYMAP_LAYERS_LEN || pos < 0 || pos >= ZMK_KEYMAP_LEN) {
+                reply("err args");
+                return;
+            }
+            const char *dev_name =
+                zmk_behavior_find_behavior_name_from_local_id(zmk_behavior_get_local_id(bname));
+            if (!dev_name) {
+                reply("err behavior");
+                return;
+            }
+            struct zmk_behavior_binding nb = {
+                .behavior_dev = dev_name, .param1 = (uint32_t)p1, .param2 = (uint32_t)p2};
+            int rc = zmk_behavior_validate_binding(&nb);
+            if (rc == 0) {
+                rc = zmk_keymap_set_layer_binding_at(zmk_keymap_layer_index_to_id(l), pos, nb);
+            }
+            reply_rc(rc);
+        } else if (!strcmp(sub, "save")) {
+            reply_rc(zmk_keymap_save_changes());
+        } else if (!strcmp(sub, "discard")) {
+            reply_rc(zmk_keymap_discard_changes());
+        } else {
+            reply("err unknown");
+        }
+    } else if (!strcmp(c, "bt") && arg) {
+        if (!strcmp(arg, "stat")) {
+            snprintf(out, sizeof(out), "bt profile=%d connected=%d open=%d",
+                     zmk_ble_active_profile_index(), zmk_ble_active_profile_is_connected(),
+                     zmk_ble_active_profile_is_open());
+            reply(out);
+        } else if (!strncmp(arg, "sel ", 4)) {
+            reply_rc(zmk_ble_prof_select((uint8_t)atoi(arg + 4)));
+        } else if (!strcmp(arg, "clr")) {
+            zmk_ble_clear_bonds();
+            reply("ok");
+        } else {
+            reply("err unknown");
+        }
     } else if (!strcmp(c, "led") && arg && !strncmp(arg, "timeout", 7)) {
         char *v = arg + 7;
         while (*v == ' ') {
@@ -245,11 +391,17 @@ static void handle(char *c) {
             }
             touch_speed_pct = v;
             reply("ok");
-        } else if (!strcmp(sub, "scroll") && rest) {
-            touch_scroll_steps = atoi(rest);
-            reply("ok");
-        } else if (!strcmp(sub, "dialdir") && rest) {
-            dial_dir = atoi(rest) < 0 ? -1 : 1;
+        } else if (!strcmp(sub, "type")) {
+            const char *t = last_src == 0x10 ? "touch" : last_src == 0x40 ? "dial" : "none";
+            snprintf(out, sizeof(out), "mod type %s %d", t,
+                     last_src ? (int)((k_uptime_get() - last_seen_ms) / 1000) : -1);
+            reply(out);
+        } else if (!strcmp(sub, "detect")) {
+            last_src = 0;
+            gpio_pin_set_raw(gpio0, MODULE_POWER_PIN, 0);
+            k_msleep(300);
+            gpio_pin_set_raw(gpio0, MODULE_POWER_PIN, 1);
+            mod_power = true;
             reply("ok");
         } else if (!strcmp(sub, "flip") && rest) {
             int fx = 0, fy = 0;
@@ -360,9 +512,50 @@ static int scale(int v, int *acc) {
     return out;
 }
 
+/* state: 1 = pressed, 0 = released, 2 = momentary (press + release) */
+static void do_act(int ev, int state) {
+    const struct naya_act *a = &acts[ev];
+    switch (a->type) {
+    case A_KEY:
+        if (state != 0) {
+            raise_zmk_keycode_state_changed_from_encoded(a->param, true, k_uptime_get());
+        }
+        if (state != 1) {
+            raise_zmk_keycode_state_changed_from_encoded(a->param, false, k_uptime_get());
+        }
+        break;
+    case A_MBTN: {
+        uint16_t btn = INPUT_BTN_0 + (a->param & 3);
+        if (state != 0) {
+            input_report_key(naya_in, btn, 1, true, K_NO_WAIT);
+        }
+        if (state != 1) {
+            input_report_key(naya_in, btn, 0, true, K_NO_WAIT);
+        }
+        break;
+    }
+    case A_WHEEL:
+        if (state != 0) {
+            input_report_rel(naya_in, INPUT_REL_WHEEL, a->param, true, K_NO_WAIT);
+        }
+        break;
+    case A_HWHEEL:
+        if (state != 0) {
+            input_report_rel(naya_in, INPUT_REL_HWHEEL, a->param, true, K_NO_WAIT);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 static void handle_module_frame(uint8_t src, const uint8_t *d, uint8_t len) {
     mod_frames++;
     activity();
+    if (src == 0x10 || src == 0x40) {
+        last_src = src;
+        last_seen_ms = k_uptime_get();
+    }
     if (src == 0x10 && len == 3) { /* touch module */
         if (d[0] == 0x02) {
             int a = (int8_t)d[1], b = (int8_t)d[2];
@@ -379,16 +572,19 @@ static void handle_module_frame(uint8_t src, const uint8_t *d, uint8_t len) {
             }
         } else if (d[0] == 0x01) {
             switch (d[1]) {
-            case 0x01: /* tap down / up */
-                input_report_key(naya_in, INPUT_BTN_0, d[2] ? 1 : 0, true, K_NO_WAIT);
+            case 0x01:
+                do_act(EV_TAP, d[2] ? 1 : 0);
                 break;
-            case 0x03: /* two-finger scroll, one direction */
-                input_report_rel(naya_in, INPUT_REL_WHEEL, touch_scroll_steps, true, K_NO_WAIT);
+            case 0x03:
+                do_act(EV_SCROLL_A, 2);
                 break;
-            case 0x04: /* two-finger scroll, other direction */
-                input_report_rel(naya_in, INPUT_REL_WHEEL, -touch_scroll_steps, true, K_NO_WAIT);
+            case 0x04:
+                do_act(EV_SCROLL_B, 2);
                 break;
-            default: /* other gestures (e.g. 0x0D pinch): not mapped yet */
+            case 0x0D:
+                do_act(EV_PINCH, 2);
+                break;
+            default:
                 break;
             }
         }
@@ -397,9 +593,9 @@ static void handle_module_frame(uint8_t src, const uint8_t *d, uint8_t len) {
             bool cw = d[3] == 0x30;
             if (dial_btn_down) {
                 dial_turned_while_down = true;
-                tap_key(cw ? C_VOLUME_UP : C_VOLUME_DOWN);
+                do_act(cw ? EV_HOLD_CW : EV_HOLD_CCW, 2);
             } else {
-                input_report_rel(naya_in, INPUT_REL_WHEEL, (cw ? -1 : 1) * dial_dir, true, K_NO_WAIT);
+                do_act(cw ? EV_TURN_CW : EV_TURN_CCW, 2);
             }
         } else if (d[0] == 0x01 && d[1] == 0x01) {
             if (d[2]) {
@@ -407,10 +603,14 @@ static void handle_module_frame(uint8_t src, const uint8_t *d, uint8_t len) {
                 dial_turned_while_down = false;
             } else {
                 if (dial_btn_down && !dial_turned_while_down) {
-                    tap_key(C_MUTE);
+                    do_act(EV_PRESS, 2);
                 }
                 dial_btn_down = false;
             }
+        } else if (d[0] == 0x01 && d[1] == 0x1D) {
+            do_act(EV_BTN_1D, 2);
+        } else if (d[0] == 0x01 && d[1] == 0x1B) {
+            do_act(EV_BTN_1B, 2);
         }
     }
 }
@@ -419,9 +619,18 @@ static void handle_module_frame(uint8_t src, const uint8_t *d, uint8_t len) {
 static uint8_t frm[48];
 static uint8_t frm_len;
 
+static char txt_win[6];
+
 static void parse_byte(uint8_t c) {
     if (frm_len == 0 && c != 0xAA) {
-        return; /* skip text / noise between frames */
+        /* text between frames: the touch module announces "touch module detected" at boot */
+        memmove(txt_win, txt_win + 1, sizeof(txt_win) - 2);
+        txt_win[sizeof(txt_win) - 2] = (char)c;
+        if (!strncmp(txt_win, "touch", 5)) {
+            last_src = 0x10;
+            last_seen_ms = k_uptime_get();
+        }
+        return;
     }
     frm[frm_len++] = c;
     if (frm_len >= 6) {
