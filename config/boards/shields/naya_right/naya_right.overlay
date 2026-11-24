@@ -17,6 +17,17 @@
         zmk,battery = &naya_vbatt;
     };
 
+    /* Touch module / dial events decoded in naya_ctrl.c, sent to the host as mouse input. */
+    naya_input: naya_input {
+        compatible = "naya,module-input";
+        status = "okay";
+    };
+
+    naya_input_listener {
+        compatible = "zmk,input-listener";
+        device = <&naya_input>;
+    };
+
     /* Battery: AIN3 (P0.05) through a 1.4133:1 divider (from original firmware). */
     naya_vbatt: naya_vbatt {
         compatible = "zmk,battery-voltage-divider";

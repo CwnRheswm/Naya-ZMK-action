@@ -1,0 +1,5 @@
+description: |
+  Input device fed by naya_ctrl.c with decoded touch-module / dial events
+  received from a Naya module on the module UART.
+compatible: "naya,module-input"
+include: base.yaml
