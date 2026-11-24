@@ -62,6 +62,8 @@
 #include <zmk/events/position_state_changed.h>
 #include <zephyr/settings/settings.h>
 #include <zmk/keymap.h>
+#include <zmk/matrix.h>
+#include <drivers/behavior.h>
 #include <zmk/behavior.h>
 #include <zmk/ble.h>
 #include <zephyr/input/input.h>
@@ -271,7 +273,7 @@ static void handle(char *c) {
                 return;
             }
             const struct zmk_behavior_binding *b =
-                zmk_keymap_get_layer_binding_at(zmk_keymap_layer_index_to_id(l), pos);
+                zmk_keymap_get_layer_binding_at_idx(zmk_keymap_layer_index_to_id(l), pos);
             char line[96];
             snprintf(line, sizeof(line), "km %d %d %s %lx %lx", l, pos,
                      (b && b->behavior_dev) ? b->behavior_dev : "none", b ? (unsigned long)b->param1 : 0,
@@ -293,10 +295,13 @@ static void handle(char *c) {
                 return;
             }
             struct zmk_behavior_binding nb = {
+#if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_LOCAL_IDS_IN_BINDINGS)
+                .local_id = zmk_behavior_get_local_id(bname),
+#endif
                 .behavior_dev = dev_name, .param1 = (uint32_t)p1, .param2 = (uint32_t)p2};
             int rc = zmk_behavior_validate_binding(&nb);
             if (rc == 0) {
-                rc = zmk_keymap_set_layer_binding_at(zmk_keymap_layer_index_to_id(l), pos, nb);
+                rc = zmk_keymap_set_layer_binding_at_idx(zmk_keymap_layer_index_to_id(l), pos, nb);
             }
             reply_rc(rc);
         } else if (!strcmp(sub, "save")) {
