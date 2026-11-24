@@ -4,3 +4,5 @@ config NAYA_CTRL
     select UART_INTERRUPT_DRIVEN
     select UART_LINE_CTRL
     select USB_CDC_ACM
+    select RING_BUFFER
+    select GPIO

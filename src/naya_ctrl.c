@@ -12,10 +12,17 @@
  *   rgb next|prev        -> cycle effect
  *   rgb spd +|-          -> animation speed
  *   boot                 -> reboot into the UF2 bootloader
+ *   mod on|off           -> module power (P0.29); on at boot
+ *   mod raw on|off       -> stream bytes received from the module as "m <hex...>" lines
+ *   mod send <hex...>    -> send raw bytes to the module, e.g. "mod send AA 00 60 00 DE 03 10 01 00 11 04"
+ *   mod baud <n>         -> change the module UART baud rate (default 115200)
+ *   mod stat             -> "mod power=<0|1> raw=<0|1> rx=<bytes received>"
  */
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/uart.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/ring_buffer.h>
 #include <zephyr/init.h>
 #include <zephyr/sys/reboot.h>
 #include <stdio.h>
@@ -28,6 +35,16 @@
 #define ADAFRUIT_BOOTLOADER_MAGIC 0x57
 
 static const struct device *const cdc = DEVICE_DT_GET(DT_NODELABEL(naya_cdc));
+static const struct device *const mod_uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
+static const struct device *const gpio0 = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+#define MODULE_POWER_PIN 29
+
+RING_BUF_DECLARE(mod_rx_rb, 512);
+static bool mod_power = true;
+static bool mod_raw = false; /* the app turns streaming on */
+static uint32_t mod_rx_total;
+static void mod_flush_handler(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(mod_flush_work, mod_flush_handler);
 
 static char line_buf[80];
 static size_t line_len;
@@ -67,6 +84,55 @@ static void handle(char *c) {
         reply("ok");
         k_msleep(50);
         sys_reboot(ADAFRUIT_BOOTLOADER_MAGIC);
+    } else if (!strcmp(c, "mod") && arg) {
+        char *sub = arg;
+        char *rest = strchr(sub, ' ');
+        if (rest) {
+            *rest++ = '\0';
+        }
+        if (!strcmp(sub, "on") || !strcmp(sub, "off")) {
+            mod_power = !strcmp(sub, "on");
+            reply_rc(gpio_pin_set_raw(gpio0, MODULE_POWER_PIN, mod_power ? 1 : 0));
+        } else if (!strcmp(sub, "raw") && rest) {
+            mod_raw = !strcmp(rest, "on");
+            reply("ok");
+        } else if (!strcmp(sub, "send") && rest) {
+            int n = 0;
+            char *p = rest;
+            while (*p) {
+                while (*p == ' ') {
+                    p++;
+                }
+                if (!*p) {
+                    break;
+                }
+                char *end;
+                long v = strtol(p, &end, 16);
+                if (end == p || v < 0 || v > 255) {
+                    reply("err hex");
+                    return;
+                }
+                uart_poll_out(mod_uart, (unsigned char)v);
+                n++;
+                p = end;
+            }
+            snprintf(out, sizeof(out), "sent %d", n);
+            reply(out);
+        } else if (!strcmp(sub, "baud") && rest) {
+            struct uart_config cfg;
+            int rc = uart_config_get(mod_uart, &cfg);
+            if (rc == 0) {
+                cfg.baudrate = (uint32_t)atoi(rest);
+                rc = uart_configure(mod_uart, &cfg);
+            }
+            reply_rc(rc);
+        } else if (!strcmp(sub, "stat")) {
+            snprintf(out, sizeof(out), "mod power=%d raw=%d rx=%u", mod_power, mod_raw,
+                     (unsigned)mod_rx_total);
+            reply(out);
+        } else {
+            reply("err unknown");
+        }
     } else if (!strcmp(c, "rgb") && arg) {
         char *sub = arg;
         char *rest = strchr(sub, ' ');
@@ -137,6 +203,42 @@ static void cdc_isr(const struct device *dev, void *user_data) {
     }
 }
 
+/* Bytes from the module: buffer in the ISR, print as hex lines from the work queue. */
+static void mod_isr(const struct device *dev, void *user_data) {
+    ARG_UNUSED(user_data);
+    while (uart_irq_update(dev) && uart_irq_is_pending(dev)) {
+        if (!uart_irq_rx_ready(dev)) {
+            break;
+        }
+        uint8_t buf[32];
+        int n = uart_fifo_read(dev, buf, sizeof(buf));
+        if (n > 0) {
+            mod_rx_total += n;
+            ring_buf_put(&mod_rx_rb, buf, n);
+            k_work_schedule(&mod_flush_work, K_MSEC(15));
+        }
+    }
+}
+
+static void mod_flush_handler(struct k_work *work) {
+    ARG_UNUSED(work);
+    uint8_t buf[24];
+    char out[2 + 3 * sizeof(buf) + 1];
+    uint32_t n;
+    while ((n = ring_buf_get(&mod_rx_rb, buf, sizeof(buf))) > 0) {
+        if (!mod_raw) {
+            continue;
+        }
+        char *o = out;
+        *o++ = 'm';
+        for (uint32_t i = 0; i < n; i++) {
+            o += snprintf(o, 4, " %02X", buf[i]);
+        }
+        *o = '\0';
+        reply(out);
+    }
+}
+
 static int naya_ctrl_init(void) {
     if (!device_is_ready(cdc)) {
         return -ENODEV;
@@ -144,6 +246,14 @@ static int naya_ctrl_init(void) {
     k_work_init(&cmd_work, cmd_work_handler);
     uart_irq_callback_set(cdc, cdc_isr);
     uart_irq_rx_enable(cdc);
+
+    if (device_is_ready(gpio0)) {
+        gpio_pin_configure(gpio0, MODULE_POWER_PIN, GPIO_OUTPUT_HIGH);
+    }
+    if (device_is_ready(mod_uart)) {
+        uart_irq_callback_set(mod_uart, mod_isr);
+        uart_irq_rx_enable(mod_uart);
+    }
     return 0;
 }
 
